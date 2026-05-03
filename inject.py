@@ -48,6 +48,31 @@ def set_clipboard(text):
     return ok
 
 
+# Electron/Chromium apps that fake AX support but ignore AXSelectedText writes
+_ELECTRON_BUNDLES = {
+    "com.tinyspeck.slackmacgap",   # Slack
+    "com.microsoft.VSCode",         # VS Code
+    "com.brave.Browser",            # Brave
+    "com.discord.Discord",          # Discord
+    "com.spotify.client",           # Spotify
+    "com.figma.Desktop",            # Figma
+    "com.notion.Notion",            # Notion
+    "com.linear.Linear",            # Linear
+    "com.obsidian.Obsidian",        # Obsidian
+}
+
+
+def _frontmost_bundle_id():
+    """Get the bundle identifier of the currently active app."""
+    try:
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        bid = app.bundleIdentifier()
+        print(f"[VoiceType] frontmost app: {bid}", flush=True)
+        return bid or ""
+    except Exception:
+        return ""
+
+
 def do_paste():
     """Paste clipboard content into the focused app. Tries multiple methods."""
 
@@ -56,23 +81,24 @@ def do_paste():
         trusted = AXIsProcessTrusted()
         print(f"[VoiceType] AX process trusted: {trusted}", flush=True)
 
-    # Strategy 1: AX direct text insertion (bypasses keyboard simulation entirely)
-    try:
-        if _paste_ax_insert():
-            print("[VoiceType] paste OK (AX insert)", flush=True)
-            return
-    except Exception as e:
-        print(f"[VoiceType] AX insert failed: {e}", flush=True)
+    # Check if frontmost app is Electron — skip AX, go straight to Cmd+V
+    bundle = _frontmost_bundle_id()
+    is_electron = bundle in _ELECTRON_BUNDLES
 
-    # Strategy 2: CGEvent Cmd+V with kCGSessionEventTap (None source)
-    try:
-        if _paste_cgevent_session():
-            print("[VoiceType] paste OK (CGEvent session)", flush=True)
-            return
-    except Exception as e:
-        print(f"[VoiceType] CGEvent session failed: {e}", flush=True)
+    # Strategy 1: AX direct text insertion (native macOS apps only)
+    if not is_electron:
+        try:
+            if _paste_ax_insert():
+                print("[VoiceType] paste OK (AX insert)", flush=True)
+                return
+        except Exception as e:
+            print(f"[VoiceType] AX insert failed: {e}", flush=True)
 
-    # Strategy 3: CGEvent Cmd+V with kCGHIDEventTap
+    # Strategy 2: Cmd+V via CGEvent HID tap
+    # Primary method for Electron apps, fallback for native apps
+    print("[VoiceType] using Cmd+V paste", flush=True)
+    time.sleep(0.05)
+
     try:
         if _paste_cgevent_hid():
             print("[VoiceType] paste OK (CGEvent HID)", flush=True)
@@ -80,7 +106,15 @@ def do_paste():
     except Exception as e:
         print(f"[VoiceType] CGEvent HID failed: {e}", flush=True)
 
-    # Strategy 4: osascript (needs Automation permission for System Events)
+    # Strategy 3: CGEvent with session tap
+    try:
+        if _paste_cgevent_session():
+            print("[VoiceType] paste OK (CGEvent session)", flush=True)
+            return
+    except Exception as e:
+        print(f"[VoiceType] CGEvent session failed: {e}", flush=True)
+
+    # Strategy 4: osascript (most compatible, needs Automation permission)
     try:
         if _paste_osascript():
             print("[VoiceType] paste OK (osascript)", flush=True)
@@ -152,7 +186,7 @@ def _paste_ax_insert():
     return False
 
 
-# ── Strategy 2: CGEvent with session tap ─────────────────────────────────
+# ── Strategy 3: CGEvent with session tap ─────────────────────────────────
 
 def _paste_cgevent_session():
     """Simulate Cmd+V using CGEvents with None source + session event tap."""
@@ -168,35 +202,44 @@ def _paste_cgevent_session():
     ev_up = CGEventCreateKeyboardEvent(None, vk_v, False)
     CGEventSetFlags(ev_up, kCGEventFlagMaskCommand)
 
-    # Post to session tap instead of HID tap
+    # Post to session tap
     CGEventPost(kCGSessionEventTap, ev_down)
-    time.sleep(0.05)
+    time.sleep(0.08)
     CGEventPost(kCGSessionEventTap, ev_up)
     time.sleep(0.05)
 
     return True
 
 
-# ── Strategy 3: CGEvent with HID tap ────────────────────────────────────
+# ── Strategy 2: CGEvent with HID tap ────────────────────────────────────
 
 def _paste_cgevent_hid():
-    """Simulate Cmd+V using CGEvents with HID system state source."""
+    """Simulate Cmd+V using CGEvents with HID system state source.
+    This is the most reliable method for Electron apps (Slack, VS Code, Discord).
+    """
     vk_v = 9
 
     from Quartz import CGEventSourceCreate, kCGEventSourceStateHIDSystemState
     src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState)
+    if src is None:
+        print("[VoiceType] CGEvent HID: cannot create event source", flush=True)
+        return False
 
+    # Key down with Cmd flag
     ev_down = CGEventCreateKeyboardEvent(src, vk_v, True)
     if ev_down is None:
         return False
     CGEventSetFlags(ev_down, kCGEventFlagMaskCommand)
 
+    # Key up with Cmd flag
     ev_up = CGEventCreateKeyboardEvent(src, vk_v, False)
     CGEventSetFlags(ev_up, kCGEventFlagMaskCommand)
 
+    # Post with longer inter-event delay for Electron compatibility
     CGEventPost(kCGHIDEventTap, ev_down)
-    time.sleep(0.05)
+    time.sleep(0.08)
     CGEventPost(kCGHIDEventTap, ev_up)
+    time.sleep(0.05)
 
     return True
 
