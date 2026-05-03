@@ -1,0 +1,22 @@
+# Virtual environment
+.venv/
+venv/
+
+# macOS app bundle (built locally)
+VoiceType.app/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+*.swp
+
+# Config with API keys (never commit)
+config.json
+
+# Distribution
+*.zip
+*.dmg
