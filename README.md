@@ -100,11 +100,9 @@ The C launcher (`launcher.c`) embeds Python directly into the Mach-O binary rath
 
 ---
 
-## Why Not Just Use Whisper / Local Models?
+## Why Not Just Use Wispr Flow?
 
-VoiceType prioritises **speed over privacy**. DeepGram nova-2 returns transcriptions in ~300ms. Groq runs Llama 3.3 70B in ~100ms. The entire speak-to-paste flow completes in under a second. Local models (Whisper, etc.) would add 3-10 seconds of latency on a MacBook Air, which defeats the purpose of a quick dictation tool.
-
-Both APIs have generous free tiers — DeepGram gives $200 in credits, Groq is free for personal use.
+Wispr Flow's free tier has strict word limits that cap how much you can dictate. VoiceType uses DeepGram and Groq directly — both offer far more generous free tiers (DeepGram gives $200 in credits, Groq is free for personal use) so you can dictate as much as you want without hitting a paywall. The speed is comparable too — DeepGram nova-2 returns transcriptions in ~300ms and Groq cleans up text in ~100ms, so the full flow completes in under a second.
 
 ---
 
